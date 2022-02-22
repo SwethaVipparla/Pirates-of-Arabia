@@ -36,7 +36,7 @@ class Boat {
   update(){
     if(this.boat){
       this.boat.rotation.y += this.speed.rot
-      this.boat.translateX(this.speed.vel)
+      this.boat.translateZ(this.speed.vel)
     }
   }
 }
@@ -138,6 +138,31 @@ function init() {
 
   window.addEventListener( 'resize', onWindowResize );
 
+  let forwardSpeed = 1;
+  let rotationSpeed = 0.03;
+
+  window.addEventListener('keydown', (e) => {
+    if(e.key === 'w'){
+      boat.speed.vel = forwardSpeed
+    }
+    
+    if(e.key === 's'){
+      boat.speed.vel = -forwardSpeed
+    }
+
+    if(e.key === 'a'){
+      boat.speed.rot = rotationSpeed
+    }
+
+    if(e.key === 'd'){
+      boat.speed.rot = -rotationSpeed
+    }
+     
+  })
+
+  window.addEventListener('keyup', (e) => {
+    boat.stop()
+  })
 }
 
 function onWindowResize() {
