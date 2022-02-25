@@ -10,14 +10,21 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 let camera, scene, renderer;
 let controls, water, sun;
 
+let third = 1;
+let birdsEye = 0;
+
 const loader = new GLTFLoader();
 
+function random(min, max) {
+  return Math.random() * (max - min) + min;
+}
 class Boat {
   constructor(){
     loader.load("assets/boat/scene.gltf", (gltf) => {
       scene.add( gltf.scene )
       gltf.scene.scale.set(0.5, 0.5, 0.5)
-      gltf.scene.position.set(5, 0, 50)
+      
+      // gltf.scene.position.set(5, 0, 50)
       gltf.scene.rotation.y = Math.PI
 
       this.boat = gltf.scene
@@ -34,19 +41,67 @@ class Boat {
   }
 
   update(){
-    if(this.boat){
+    if(this.boat)
+    {
       this.boat.rotation.y += this.speed.rot
       this.boat.translateZ(this.speed.vel)
+
+      if(third)
+        controls.target.set(boat.boat.position.x, boat.boat.position.y, boat.boat.position.z);
+      else
+        controls.target.set(boat.boat.position.x, 500, boat.boat.position.z);
+      
+      controls.saveState();
+      controls.update();
+      
+      if(!third)
+        camera.lookAt((boat.boat.position.x - Math.cos(Math.PI - boat.boat.rotation.y) * 100), 50, (boat.boat.position.z - Math.sin(Math.PI - boat.boat.rotation.y) * 100));
     }
   }
 }
 
 const boat = new Boat()
 
+class Treasure {
+  constructor(_scene){
+      scene.add( _scene )
+      _scene.scale.set(0.5, 0.5, 0.5)
+      if(Math.random() > 0.8){
+        _scene.position.set(random(-100, -100), -0.3, random(-100, 100))
+      } else {
+        _scene.position.set(random(-500, 500), -0.3, random(-1000, 1000))
+      }
+
+      this.treasure = _scene
+  }
+}
+
+async function loadModel(url) {
+  return new Promise((resolve, reject) => {
+    loader.load(url, (gltf) => {
+      resolve(gltf.scene)
+      })
+  })
+}
+
+let boatModel = null
+
+async function createTreasure(){
+  if(!boatModel){
+    boatModel = await loadModel("assets/treasure/scene.gltf")
+  }
+
+  return new Treasure(boatModel.clone())
+}
+
+let treasures = []
+
+const count = 20
+
 init();
 animate();
 
-function init() {
+async function init() {
 
   renderer = new THREE.WebGLRenderer();
   renderer.setPixelRatio( window.devicePixelRatio );
@@ -60,6 +115,9 @@ function init() {
 
   camera = new THREE.PerspectiveCamera( 55, window.innerWidth / window.innerHeight, 1, 20000 );
   camera.position.set( 30, 30, 100 );
+
+  var geometry = new THREE.BoxBufferGeometry( 0.2, 0.2, 0.2 );
+  var material = new THREE.MeshNormalMaterial();
 
   //
 
@@ -127,20 +185,19 @@ function init() {
 
   updateSun();
 
-  controls = new OrbitControls( camera, renderer.domElement );
-  controls.maxPolarAngle = Math.PI * 0.495;
-  controls.target.set( 0, 10, 0 );
-  controls.minDistance = 40.0;
-  controls.maxDistance = 200.0;
-  controls.update();
-
+  
   const waterUniforms = water.material.uniforms;
-
+  
+  for(let i = 0; i < count; i++){
+    const treasure = await createTreasure()
+    treasures.push(treasure)
+  }
+  
   window.addEventListener( 'resize', onWindowResize );
-
+  
   let forwardSpeed = 1;
   let rotationSpeed = 0.03;
-
+  
   window.addEventListener('keydown', (e) => {
     if(e.key === 'w'){
       boat.speed.vel = forwardSpeed
@@ -149,21 +206,38 @@ function init() {
     if(e.key === 's'){
       boat.speed.vel = -forwardSpeed
     }
-
+    
     if(e.key === 'a'){
       boat.speed.rot = rotationSpeed
     }
-
+    
     if(e.key === 'd'){
       boat.speed.rot = -rotationSpeed
     }
-     
-  })
 
+    if(e.key === 'c')
+    {
+      if(third)
+        birdsEye = 1;
+      else
+        birdsEye = 0;
+      third = !third;
+      console.log(third)
+    }
+    
+  })
+  
   window.addEventListener('keyup', (e) => {
     boat.stop()
   })
 }
+
+controls = new OrbitControls( camera, renderer.domElement );
+controls.maxPolarAngle = Math.PI * 0.4;
+controls.target.set( 0, 10, 0 );
+controls.minDistance = 40.0;
+controls.maxDistance = 100.0;
+controls.update();
 
 function onWindowResize() {
 
@@ -174,23 +248,41 @@ function onWindowResize() {
 
 }
 
+function isColliding(obj1, obj2){
+  return (
+    Math.abs(obj1.position.x - obj2.position.x) < 15 &&
+    Math.abs(obj1.position.z - obj2.position.z) < 15
+  )
+}
+
+function checkCollisions(){
+  if(boat.boat){
+    treasures.forEach(treasure => {
+      console.log("hello")
+      if(treasure.treasure){
+        if(isColliding(boat.boat, treasure.treasure)){
+          scene.remove(treasure.treasure)
+        }
+      }
+    })
+  }
+}
+
 function animate() {
 
   requestAnimationFrame( animate );
   render();
   boat.update();
+  checkCollisions()
 }
 
 function render() {
 
+  // controls.target.set(boat.boat.position.x, boat.boat.position.y, boat.boat.position.z);
+  // controls.saveState();
+  // controls.update();
   water.material.uniforms[ 'time' ].value += 1.0 / 60.0;
-
+  
   renderer.render( scene, camera );
 
 }
-
-
-document.querySelector('#app').innerHTML = `
-<h1>Hello Vite!</h1>
-<a href="https://vitejs.dev/guide/features.html" target="_blank">Documentation</a>
-`
