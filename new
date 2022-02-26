@@ -1,0 +1,500 @@
+import './style.css'
+
+import * as THREE from 'three';
+
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { Water } from 'three/examples/jsm/objects/Water.js';
+import { Sky } from 'three/examples/jsm/objects/Sky.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+
+let camera, scene, renderer;
+let controls, water, sun, HUD_LEFT, HUD_RIGHT;
+let sceneHUD, cameraHUD;
+let hudBitmap, hudCanvas;
+
+let chestsLootedText, timePassedtext, boatHealthtext, piratesDestroyedtext;
+
+const loader = new GLTFLoader();
+const TREASURE_COUNT = 25
+const PIRATE_COUNT = 10
+const APPROACH_DISTANCE = 300
+const MOVEMENT_DISTANCE = 1000
+let treasure_captured = 0
+let boat_health = 100
+let piratesDestroyed = 0
+
+let cameramode = 1
+
+let treasures = []
+let pirates = []
+let treasureModel = null
+let boatModel = null
+let gameState = 1
+let boatposition = new THREE.Vector3(5, 5, 50)
+
+const width = window.innerWidth
+const height = window.innerHeight
+
+// set start time
+let startTime = Date.now();
+let clickTime = Date.now();
+// set time passed since startTime
+function getTimePassed() {
+  return (Date.now() - startTime) / 1000;
+}
+
+function random(min, max) {
+  return Math.random() * (max - min) + min;
+}
+
+class Boat {
+  constructor(){
+    loader.load("assets/main_boat/scene.gltf", (gltf) => {
+      scene.add( gltf.scene )
+      gltf.scene.position.set(5,5,50)
+      gltf.scene.scale.set(2, 2, 2)
+      gltf.scene.rotation.y = 1.5
+
+      this.boat = gltf.scene
+      this.speed = {
+        vel: 0,
+        rot: 0
+      }
+    })
+  }
+
+  update(){
+    if(this.boat){
+      this.boat.rotation.y += this.speed.rot
+      this.boat.translateX(this.speed.vel)
+      // update boat position
+      boatposition.x = this.boat.position.x
+      boatposition.y = this.boat.position.y
+      boatposition.z = this.boat.position.z  
+    }
+  }
+
+  shoot(){
+    const cannonball = new THREE.Mesh(
+      new THREE.SphereGeometry(4, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0x00001 })
+    );
+    cannonball.position.set(this.boat.position.x, this.boat.position.y, this.boat.position.z)
+    cannonball.rotation.y = this.boat.rotation.y
+    scene.add(cannonball)
+    const cannonballSpeed = 2
+    const cannonballInterval = setInterval(() => {
+      cannonball.translateX(cannonballSpeed);
+      pirates.forEach(pirate => {
+        if(pirate.pirate){
+          if(pirate.isdetroyed == false && isColliding(cannonball, pirate.pirate)){
+            pirate.isdetroyed = true
+            pirate.sink()
+            scene.remove(cannonball)
+            clearInterval(cannonballInterval)
+          }
+        }
+      })
+      if (cannonball.position.x - boatposition.x > 500) {
+        clearInterval(cannonballInterval)
+        scene.remove(cannonball)
+      }
+    }, 10);
+  }
+}
+const boat = new Boat()
+
+class Treasure{
+  constructor(_scene){
+    scene.add( _scene )
+    _scene.scale.set(1.5, 1.5, 1.5)
+    _scene.position.set(random(-2500, 2500), -.5, random(-2500, 2500))
+
+    this.treasure = _scene
+    this.iscaptured = false
+  }
+}
+
+class Pirate{
+  constructor(_scene_pirate){
+    scene.add( _scene_pirate )
+    _scene_pirate.scale.set(2.5, 2.5, 2.5)
+    _scene_pirate.position.set(random(-2000, 2000), -5, random(-2000, 2000))
+
+    this.pirate = _scene_pirate
+    this.isdetroyed = false
+  }
+
+  update(){
+    // distance to boat
+    let distance = this.pirate.position.distanceTo(boatposition)
+    // normalize vector
+    let direction = new THREE.Vector3((boatposition.x - this.pirate.position.x), (boatposition.y - this.pirate.position.y), (boatposition.z - this.pirate.position.z))
+    direction.normalize()
+    // rotate pirate towards boat
+    // this.pirate.rotation.y += (direction.y - this.pirate.rotation.y) * 0.1
+    this.pirate.rotation.y = Math.atan2(direction.x, direction.z)
+    if (distance > APPROACH_DISTANCE && distance < MOVEMENT_DISTANCE) {
+      // move pirate towards boat
+      this.pirate.position.x += direction.x * 0.4
+      this.pirate.position.y += direction.y * 0.4
+      this.pirate.position.z += direction.z * 0.4
+    }
+    if (random(0, 10000) < 20){
+      this.shoot()
+    }
+  }
+
+  shoot(){
+    const cannonball = new THREE.Mesh(
+      new THREE.SphereGeometry(4, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0x00011 })
+    );
+    cannonball.position.set(this.pirate.position.x, this.pirate.position.y + 10 , this.pirate.position.z)
+    cannonball.rotation.y = this.pirate.rotation.y
+    scene.add(cannonball)
+    const cannonballSpeed = 1
+    const cannonballInterval = setInterval(() => {
+      cannonball.translateZ(cannonballSpeed);
+      if(isColliding(cannonball, boat.boat)){
+        boat_health -= 10
+        scene.remove(cannonball)
+        clearInterval(cannonballInterval)
+      }
+      if (cannonball.position.x - this.pirate.position.x > 500) {
+        clearInterval(cannonballInterval)
+        scene.remove(cannonball)
+      }
+    }, 10);
+  }
+
+  sink(){
+    piratesDestroyed++
+    const interval = setInterval(() => {
+      this.pirate.translateY(-0.1)
+      if (this.pirate.position.y < -100) {
+        clearInterval(interval)
+        scene.remove(this.pirate)
+      }
+    }, 10);
+  }
+}
+
+async function loadModel(url){
+  return new Promise((resolve, reject) => {
+    loader.load(url, (gltf) => {
+      resolve(gltf.scene)
+    })
+  })
+}
+
+async function createTreasure(){
+  if(!treasureModel){
+    treasureModel = await loadModel("assets/treasure_chest/scene.gltf")
+  }
+  return new Treasure(treasureModel.clone())
+}
+
+async function createPirate(){
+  if(!boatModel){
+    boatModel = await loadModel("assets/GhostShip/ghostship.gltf")
+  }
+  return new Pirate(boatModel.clone())
+}
+
+// function createPage(divID, imagePath) {
+//   const page = document.createElement("div");
+//   page.id = divID;
+//   page.style.position = "absolute";
+//   page.style.top = "0";
+//   page.style.left = "0";
+//   page.style.width = "100%";
+//   page.style.height = "100vh";
+//   page.style.backgroundImage = "url(" + imagePath + ")";
+//   page.style.backgroundSize = "cover";
+//   page.style.backgroundPosition = "center";
+//   page.style.display = "none";
+
+//   return page;
+// }
+
+// // read enter key as input to change page
+// document.addEventListener("keydown", (event) => {
+//   if (event.key == "Enter" && Date.now() - clickTime > 500) {
+//     clickTime = Date.now()
+//     if (gameState == 1) {
+//       gameState = 2
+//     }
+//     if (gameState == 2) {
+//       gameState == 3
+//     }
+//   }
+// });
+
+// if (gameState == 1){
+//   let intro = createPage("intro", "assets/Intro.png");
+//   intro.style.display = "block";
+//   intro.style.backgroundColor = "black";
+//   document.body.appendChild(intro);
+// }
+
+// if (gameState == 2){
+//   document.getElementById("intro").remove();
+//   let Instructions = createPage("Instructions ", "assets/Instructions.png");
+//   Instructions .style.display = "block";
+//   Instructions .style.backgroundColor = "black";
+//   document.body.appendChild(Instructions);
+// }
+
+// else {
+  document.getElementById("Instructions").remove();
+  init();  
+  animate();
+// }
+
+
+async function init() {
+
+  HUD_LEFT = document.createElement("div");
+  HUD_LEFT.id = "hud-top";
+  HUD_LEFT.style.padding = "10px";
+  HUD_LEFT.style.display = "block";
+  HUD_LEFT.style.position = "absolute";
+  HUD_LEFT.style.top = "0";
+  HUD_LEFT.style.left = "0";
+  HUD_LEFT.style.fontSize = "25px";
+  document.body.appendChild(HUD_LEFT);
+
+  HUD_RIGHT = document.createElement("div");
+  HUD_RIGHT.id = "hud-top";
+  HUD_RIGHT.style.padding = "10px";
+  HUD_RIGHT.style.display = "block";
+  HUD_RIGHT.style.position = "absolute";
+  HUD_RIGHT.style.top = "0";
+  HUD_RIGHT.style.right = "0";
+  HUD_RIGHT.style.fontSize = "25px";
+  document.body.appendChild(HUD_RIGHT);
+
+  renderer = new THREE.WebGLRenderer();
+  renderer.setPixelRatio( window.devicePixelRatio );
+  renderer.setSize( window.innerWidth, window.innerHeight );
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  document.body.appendChild( renderer.domElement );
+
+  scene = new THREE.Scene();
+
+  camera = new THREE.PerspectiveCamera( 55, window.innerWidth / window.innerHeight, 1, 20000 );
+  camera.position.set( 30, 30, 100 );
+
+  sun = new THREE.Vector3();
+
+  // Water
+
+  const waterGeometry = new THREE.PlaneGeometry( 10000, 10000 );
+
+  water = new Water(
+    waterGeometry,
+    {
+      textureWidth: 512,
+      textureHeight: 512,
+      waterNormals: new THREE.TextureLoader().load( 'assets/waternormals.jpg', function ( texture ) {
+
+        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+
+      } ),
+      sunDirection: new THREE.Vector3(),
+      sunColor: 0xffffff,
+      waterColor: 0x001e0f,
+      distortionScale: 3.7,
+      fog: scene.fog !== undefined
+    }
+  );
+
+  water.rotation.x = - Math.PI / 2;
+
+  scene.add( water );
+
+  // Skybox
+
+  const sky = new Sky();
+  sky.scale.setScalar( 10000 );
+  scene.add( sky );
+
+  const skyUniforms = sky.material.uniforms;
+
+  skyUniforms[ 'turbidity' ].value = 10;
+  skyUniforms[ 'rayleigh' ].value = 2;
+  skyUniforms[ 'mieCoefficient' ].value = 0.005;
+  skyUniforms[ 'mieDirectionalG' ].value = 0.8;
+
+  const parameters = {
+    elevation: 2,
+    azimuth: 180
+  };
+
+  const pmremGenerator = new THREE.PMREMGenerator( renderer );
+
+  function updateSun() {
+
+    const phi = THREE.MathUtils.degToRad( 90 - parameters.elevation );
+    const theta = THREE.MathUtils.degToRad( parameters.azimuth );
+
+    sun.setFromSphericalCoords( 1, phi, theta );
+
+    sky.material.uniforms[ 'sunPosition' ].value.copy( sun );
+    water.material.uniforms[ 'sunDirection' ].value.copy( sun ).normalize();
+
+    scene.environment = pmremGenerator.fromScene( sky ).texture;
+
+  }
+
+  updateSun();
+
+  controls = new OrbitControls( camera, renderer.domElement );
+  controls.maxPolarAngle = Math.PI * 0.495;
+  controls.target.set( 0, 10, 0 );
+  controls.minDistance = 40.0;
+  controls.maxDistance = 200.0;
+  controls.update();
+
+  const waterUniforms = water.material.uniforms;
+
+  for(let i = 0; i < TREASURE_COUNT; i++){
+    const treasure = await createTreasure()
+    treasures.push(treasure)
+  }
+
+  for(let i = 0; i < PIRATE_COUNT; i++){
+    const pirate = await createPirate()
+    pirates.push(pirate)
+  }
+
+  window.addEventListener( 'resize', onWindowResize );
+
+  window.addEventListener( 'keydown', function(e){
+    if(e.key == "ArrowUp" || e.key == "w"){
+      boat.speed.vel = 1.5
+    }
+    if(e.key == "ArrowDown" || e.key == "s"){
+      boat.speed.vel = -1.5
+    }
+    if(e.key == "ArrowRight" || e.key == "d"){
+      boat.speed.rot = -0.05
+    }
+    if(e.key == "ArrowLeft" || e.key == "a"){
+      boat.speed.rot = 0.05
+    }
+    if(e.key == "1"){
+      cameramode = 1
+    }
+    else if (e.key == "2"){
+      cameramode = 2
+    }
+    if (e.key == " "){
+      if (Date.now() - clickTime > 1000){
+        clickTime = Date.now()
+        boat.shoot()
+      }
+    }
+  })
+  window.addEventListener( 'keyup', function(e){
+    if(e.key == "ArrowUp" || e.key == "ArrowDown" || e.key == "w" || e.key == "s"){
+      boat.speed.vel = 0
+    }
+    if(e.key == "ArrowRight" || e.key == "ArrowLeft" || e.key == "a" || e.key == "d"){
+      boat.speed.rot = 0
+    }
+  })
+
+}
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+
+  renderer.setSize( window.innerWidth, window.innerHeight );
+}
+
+function isColliding(obj1, obj2){
+  return (
+    Math.abs(obj1.position.x - obj2.position.x) < 15 &&
+    Math.abs(obj1.position.z - obj2.position.z) < 15
+  )
+}
+
+function checkCollisions(){
+  if(boat.boat){
+    treasures.forEach(treasure => {
+      if(treasure.treasure){
+        if(treasure.iscaptured == false && isColliding(boat.boat, treasure.treasure)){
+          scene.remove(treasure.treasure)
+          treasure_captured++
+          treasure.iscaptured = true
+        }
+      }
+    })
+    pirates.forEach(pirate => {
+      if(pirate.pirate){
+        if(pirate.isdetroyed == false && isColliding(boat.boat, pirate.pirate)){
+          pirate.isdetroyed = true
+          pirate.sink()
+          boat_health -= 50
+        }
+      }
+    })
+  }
+}
+
+function updateCamera(){
+  if(cameramode == 1){
+    controls.target.set(boatposition.x, boatposition.y + 50, boatposition.z);
+    controls.update();
+    controls.saveState();
+    controls.maxDistance = 150.0;
+  }
+  else if(cameramode == 2){
+    controls.target.set(boatposition.x, 500, boatposition.z);
+    controls.saveState();
+    controls.update();
+    camera.lookAt((boatposition.x - Math.cos(Math.PI - boat.boat.rotation.y) * 100), 50, (boatposition.z - Math.sin(Math.PI - boat.boat.rotation.y) * 100));
+  }
+}
+
+// function updateHUD(){
+//   hudBitmap.clearRect(0, 0, width, height);
+//   hudBitmap.fillText("Treasures Captured: "+ treasure_captured, width/2, height/2);
+//   hudTexture.needsUpdate = true;
+// }
+
+function updateHUD() {
+  if (boat.boat) {
+      const zeroPad = (num, places) => String(num).padStart(places, "0");
+
+      let timepassed = getTimePassed();
+      boatHealthtext = "Ship Health: " + boat_health + "%";
+      chestsLootedText = "Chests Looted: " + treasure_captured + " / " + TREASURE_COUNT;
+      timePassedtext   = "Time Passed:   " + zeroPad(Math.floor(timepassed / 60), 2) + ":" + zeroPad(Math.floor(timepassed % 60), 2);
+      piratesDestroyedtext = "Pirates Destroyed: " + piratesDestroyed + " / " + PIRATE_COUNT;
+
+      HUD_LEFT.innerHTML = chestsLootedText + "<br>" + piratesDestroyedtext + "<br>" + boatHealthtext ;
+      HUD_RIGHT.innerHTML = timePassedtext;
+  }
+}
+
+function animate() {
+  requestAnimationFrame( animate );
+  render();
+  updateCamera()
+  updateHUD()
+  boat.update()
+  for(let i = 0; i < pirates.length; i++){
+    pirates[i].update()
+  }
+  checkCollisions()
+}
+
+function render() {
+  water.material.uniforms[ 'time' ].value += 1.0 / 60.0;
+  renderer.render( scene, camera );
+  // renderer.render( sceneHUD, cameraHUD );
+}
