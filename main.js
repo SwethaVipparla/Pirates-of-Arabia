@@ -57,14 +57,14 @@ class Boat
   {
     const cannon = new THREE.Mesh
     (
-      new THREE.SphereGeometry(4, 8, 8),
+      new THREE.SphereGeometry(2, 6, 6),
       new THREE.MeshBasicMaterial({ color: 0x11111 })
     );
 
     cannon.position.set(this.boat.position.x, 20, this.boat.position.z);
     cannon.rotation.y = this.boat.rotation.y;
     scene.add(cannon);
-    const cannonSpeed = 2.5;
+    const cannonSpeed = 10;
 
     const cannonInterval = setInterval(() => 
     {
@@ -93,6 +93,8 @@ class Boat
 
   update() 
   {
+    if(health == 0 || health < 0)
+      this.remove();
     if (this.boat) 
     {
       this.boat.rotation.y += this.speed.rot;
@@ -131,9 +133,9 @@ class Pirate
     _scene.scale.set(0.04, 0.04, 0.04);
 
     if (Math.random() > 0.9) 
-      _scene.position.set(random(-10000, -10000), 6, random(-10000, 10000));
+      _scene.position.set(random(-10000, -10000), 15, random(-10000, 10000));
      else 
-      _scene.position.set(random(-5000, 5000), 6, random(-5000, 5000));
+      _scene.position.set(random(-5000, 5000), 15, random(-5000, 5000));
 
     this.pirate = _scene;
 
@@ -154,9 +156,6 @@ class Pirate
 
   update(boat)
   {
-    if(health == 0 || health < 0)
-      this.remove();
-
     let direction = new THREE.Vector3((boat.boat.position.x - this.pirate.position.x), (boat.boat.position.y - this.pirate.position.y), (boat.boat.position.z - this.pirate.position.z));
 
     direction.normalize();
@@ -164,49 +163,49 @@ class Pirate
     let x = Math.abs(this.pirate.position.x - boat.boat.position.x);
     let z = Math.abs(this.pirate.position.z - boat.boat.position.z);
 
-    this.pirate.rotation.y = Math.atan2(direction.x, direction.z);
+    this.pirate.rotation.y = Math.atan2(direction.x, direction.z) + Math.PI;
 
     if(x < 200 && z < 200)
       return;
 
-    this.pirate.position.x += direction.x * 0.6;
-    this.pirate.position.z += direction.z * 0.6;
-    this.pirate.position.y += direction.y * 0.6;
+    this.pirate.position.x += direction.x * 0.9;
+    this.pirate.position.z += direction.z * 0.9;
+    this.pirate.position.y += direction.y * 0.9;
 
-    if(random(0, 10000) < 20)
+    if(random(0, 10000) < 30)
       this.shootCannon();
   }
 
-    shootCannon() 
+  shootCannon() 
+  {
+    const cannon = new THREE.Mesh
+    (
+      new THREE.SphereGeometry(2, 6, 6),
+      new THREE.MeshBasicMaterial({ color: "grey"})
+    );
+
+    cannon.position.set(this.pirate.position.x, 20, this.pirate.position.z);
+    cannon.rotation.y = boat.boat.rotation.y;
+    scene.add(cannon);
+    const cannonSpeed = 10;
+
+    const cannonInterval = setInterval(() => 
     {
-      const cannon = new THREE.Mesh
-      (
-        new THREE.SphereGeometry(4, 8, 8),
-        new THREE.MeshBasicMaterial({ color: 0xfffff })
-      );
+      cannon.translateY(cannonSpeed * Math.sin(cannon.rotation.y));
 
-      cannon.position.set(this.pirate.position.x, 20, this.pirate.position.z);
-      cannon.rotation.y = boat.boat.rotation.y;
-      scene.add(cannon);
-      const cannonSpeed = 2;
-
-      const cannonInterval = setInterval(() => 
+      if(isColliding(cannon, boat.boat))
       {
-        cannon.translateZ(cannonSpeed * Math.sin(cannon.rotation.y));
+        health -= 10;
+        scene.remove(cannon);
+        clearInterval(cannonInterval);
+      }
 
-        if(isColliding(cannon, boat.boat))
-        {
-          health -= 10;
-          scene.remove(cannon);
-          clearInterval(cannonInterval);
-        }
-
-        if(cannon.position.x - this.pirate.position.x > 500)
-        {
-          scene.remove(cannon);
-          clearInterval(cannonInterval);
-        }
-    }, 10);
+      if(cannon.position.x - this.pirate.position.x > 700)
+      {
+        scene.remove(cannon);
+        clearInterval(cannonInterval);
+      }
+  }, 10);
 }
 
   die()
@@ -240,7 +239,6 @@ class Treasure
       _scene.position.set(random(-500, 500), -0.3, random(-1000, 1000));
     
     this.treasure = _scene;
-    this.isCollected = false;
   }
 }
 
@@ -296,9 +294,10 @@ function updateHUD()
     healthText = "Health: " + health;
     destroyedText = "Destroyed: " + destroyed;
     timeText = "Time Elapsed: " + zeroPad(Math.floor(((Date.now() - timeNow) / 1000) / 60), 2) + ":" + zeroPad(Math.floor(((Date.now() - timeNow) / 1000) % 60), 2);
+    treasureText = "Treasures Taken: " + treasureTaken;
 
-    HUD.innerHTML = scoreText + " | "+ healthText + " | " + destroyedText + " | " + timeText;
-  }
+    HUD.innerHTML = scoreText + " | "+ healthText + " | " + destroyedText + " | " + timeText + " | " + treasureText;
+  } 
 }
 
 let treasures = [];
@@ -340,7 +339,7 @@ async function init()
     20000
   );
   
-  camera.position.set(30, 30, 100);
+  camera.position.set(400, 2, 20);
 
   sun = new THREE.Vector3();
 
@@ -364,7 +363,7 @@ async function init()
       ),
       sunDirection: new THREE.Vector3(),
       sunColor: 0xffffff,
-      waterColor: 0x001e0f,
+      waterColor: "blue",
       distortionScale: 3.7,
       fog: scene.fog !== undefined,
     }
@@ -409,8 +408,6 @@ async function init()
   }
 
   updateSun();
-
-  const waterUniforms = water.material.uniforms;
 
   for (let i = 0; i < countTreasure; i++) 
   {
@@ -496,12 +493,11 @@ function checkCollisions() {
         if (isColliding(boat.boat, treasure.treasure)) 
         {
           scene.remove(treasure.treasure);
-          treasure.isCollected = true;
+          score += 10;
+          treasureTaken++;
+          treasure.treasure = null;
         }
       }
-      if(treasure.isCollected)
-        score += 10;
-      treasure.isCollected = false;
     });
   }
   pirates.forEach((pirate) => 
